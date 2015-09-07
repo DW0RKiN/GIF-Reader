@@ -1,12 +1,11 @@
 ; GIF reader v0.4b for ZX Spectrum
-; Not used BRIGHT.
+; 256 x 192 only.
+; Not used Bright. Ignores color collision.
+; The effort to maintain the continuity of values Paper and Ink.
 ; Simple rules to minimize the inverted matrix of 8x8 pixels.
-; Striving for the binding of color PAPER and INK.
-; CLEARCODE fixed
-; Support for calling directly from BASIC
-; Support error codes
-; Overflow screens with large images is detected
-; 256 x 192 only
+; Support for calling directly from Basic.
+; Support Error codes.
+; Overflow screens with large images is detected.
 ;
 ; http://www.matthewflickinger.com/lab/whatsinagif/bits_and_bytes.asp
 ; http://www.matthewflickinger.com/lab/whatsinagif/lzw_image_data.asp
@@ -24,7 +23,7 @@ ORG progStart
 ; HI        LO
 ; GRBiiiii iiiiiiiS = S = stop bit, nastaven u prvni polozky slova, tzn. maji ho indexy mensi jak CLEARCODE
 ;  +
-; AAA..... ........ = segment adresy musi lezet na adrese delitelne 16kb
+; AAA..... ........ = segment adresy musi lezet na adrese delitelne 8 KB
 ;  =
 ; AAAiiiii iiiiiii0 = adresa predchozi polozky slovniku
 
