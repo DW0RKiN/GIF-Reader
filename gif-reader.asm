@@ -16,7 +16,7 @@
 
 ADR_SEG_SLOVNIKU	EQU	5 * %00100000		; $A000..$BFFF, granularita 8 KB
 ADR_SLOVNIKU		EQU	256 * ADR_SEG_SLOVNIKU
-progStart 		EQU	ADR_SLOVNIKU + $2000	; $C000 = 49152
+progStart		EQU	ADR_SLOVNIKU + $2000	; $C000 = 49152
 
 ORG progStart
 
@@ -47,13 +47,13 @@ MAIN:
 	
 	LD	(ERROR_EXIT+1),SP	; 20:4
 	CALL	INIT			; 17:3
-	CALL	DECODE			; 17:3
+	JP	DECODE			; 10:3 Na zasobniku mame data a chceme minimalizovat naklady k pristupu k nim. 
 MAIN_EXIT:
 	POP	HL			; 10:1
 	EXX				;  4:1
 	LD	C,A			;  4:1 = exit code
 	LD	B,$00			;  7:2
-	RET 				; 10:1
+	RET				; 10:1
 
 
 DATA:
@@ -68,15 +68,8 @@ PREVIOUS_INDEX:	; predchozi index z bitoveho proudu
 DW	0	;
 
 ; Globalni pouziti registru:
-; 	IXH = MIN_SIRKA_LZW:
-; 	IXL = AKT_SIRKA_LZW:
-
-
-; ----------------------------------------------
-ERROR_EXIT:
-; stala se chyba, ukoncime program
-	LD	SP,$0000		; 10:3
-	JR	MAIN_EXIT		; 12:2
+;	IXH = MIN_SIRKA_LZW:
+;	IXL = AKT_SIRKA_LZW:
 
 
 
@@ -84,11 +77,11 @@ ERROR_EXIT:
 ; Vstup: 
 ;	A  = "Packed byte"
 ;	HL = Adresa posledniho bajtu hlavicky
-; 	D  = 0
+;	D  = 0
 ; Vystup:
 ;	HL = HL + 1, DE = 0
 ;	HL = sizeof(PALETA), DE = HL + 1
-; 	Plati HL + DE = DE + HL
+;	Plati HL + DE = DE + HL
 READ_PALETTE:
 	LD	E,D			;  4:1 DE = 0
 	INC	HL			;  6:1
@@ -146,8 +139,8 @@ I_NEXT_FRAME:
 	CP	$f9			; Gif Graphics Control Extension
 	JR	z,I_NEXT_FRAME-1	;12/7:2
 
-; 	CP	$01			; Reading Plain Text Extension Block
-; 	CP	$ff			; Reading Application Frame
+;	CP	$01			; Reading Plain Text Extension Block
+;	CP	$ff			; Reading Application Frame
 	CP	$fe			; Reading Gif Comment Extension
 	
 	LD	A,ERR_UNKNOWN_FRAME	;  7:2
@@ -177,12 +170,13 @@ I_FRAME_0x2C:
 ; Ulozeni promennych pro bitovy proud do pameti
 	LD	D,(HL)			;  7:1 nacteni hlavicky prvniho datoveho bloku
 	INC	HL			;  6:1
-	LD	(DATA),HL		; 16:3 adresa do bitoveho proudu LZW kodu
-	LD	E,$09			;  7:2 "zbyva bitu"
-	LD	(DATA+2),DE		; 20:4 D = "zbyva bajtu"
-	LD	A,(HL)			;  7:1
-	LD	(DATA+4),A		; 13:3 aktualni bajt z bitoveho proudu	
-	
+	POP	AF			; 10:1 Nacti RET
+	PUSH	HL			; 11:1 adresa na bajt cteny z bitoveho proudu
+	LD	E,$09			;  7:2 pocet zbyvajicich bitu se odcita pred ctenim
+	PUSH	DE			; 11:1 D = "zbyva bajtu", E = "zbyva bitu"
+	LD	D,(HL)			;  7:1
+	PUSH	DE			; 11:1 aktualni bajt z bitoveho proudu	
+	PUSH	AF			; 11:1 RET
 	LD	HL,$ffff		; 10:3
 	LD	(ADR_FRAMEBUFF+1),HL	; 16:3 "curzor" do obrazu nastavime na 0,0
 	INC	HL			;  6:1 =0
@@ -193,7 +187,7 @@ I_LOOP:
 
 	LD	B,L			;  4:1 realny CLEARCODE = 4,8,16,32,64,128,0(=256) 
 
-	INC 	HL			;  6:1
+	INC	HL			;  6:1
 	LD	(STOPCODE+1),HL		; 16:3
 	INC	HL			;  6:1
 	LD	(MAX_INDEX+1),HL	; 16:3 ukazuje na novou, jeste nevyplnenou polozku
@@ -235,41 +229,30 @@ I_SLOVNIK:
 	LD	(DE),A			;  7:1 GRB.....
 	INC	DE			;  6:1
 	DJNZ	I_SLOVNIK		;13/8:2
-;	Propadne na dalsi fci SET_FLASH_BRIGHT
 	LD	BC,$00C0		;  7:2 set Flash + Bright + Black + Black
+	RET				; 10:1
 
 
-; -----------------------
-; Fce edituje hodnoty vsech barev
-Vstup:
-;	B = co nesmazeme z puvodniho
-;	C = co k tomu pridame
-;	$00C0 => %11000000 set Flash + Bright + Black + Black
-;	$3F00 => %00?????? Clear Flash + Bright
-SET_FLASH_BRIGHT:
-	LD	HL,$5800		; 10:3
-SFB_LOOP:
-	LD	A,(HL)			;  7:1
-	AND	B			;  4:1
-	OR	C			;  4:1
-	LD	(HL),A			;  7:1 Clear Flash + Bright / Set Flash + Bright + Black + Black 
-	INC	HL			;  6:1
-	LD	A,$5B			;  7:2
-	SUB	H			;  4:1
-	JR	nz,SFB_LOOP		;12/7:2
-	RET				; 10:1 A = 0 = ERR_OK
+
+; ----------------------------------------------
+EXIT_DECODE:
+	XOR	A			;  4:1 = ERR_OK
+ERROR_EXIT:
+; stala se chyba, ukoncime program
+	LD	SP,$0000		; 10:3
+	JP	MAIN_EXIT		; 12:2
 
 
 
 ; ----------------------------------------------
 ; Fce cte jeden bit z bitoveho proudu
 ; Vstup: 
-; 	HL  adresa prave cteneho bajtu
-; 	E   "zbyva bitu", 
-; 	D   "zbyva bajtu"
-; 	A   uz rotovany prave cteny bajt
+;	HL  adresa prave cteneho bajtu
+;	E   "zbyva bitu", 
+;	D   "zbyva bajtu"
+;	A   uz rotovany prave cteny bajt
 ; Vystup: 
-; 	hodnota cteneho bitu je v carry
+;	hodnota cteneho bitu je v carry
 READ_BIT:
 	EXX				;  4:1
 	DEC	E			;  4:1 "zbyva bitu", pred prvnim ctenim musi obsahovat 9, a ne 8
@@ -300,17 +283,18 @@ RB_ROTATE:
 ; Nemeni: DE
 READxBITS:
 	LD	C,IXL			;  8:2 AKT_SIRKA_LZW = pocet ctenych bitu
-; Nacteni promennych z pameti
+; Nacteni promennych ze zasobniku
 	EXX				;  4:1
-	LD	HL,(DATA)		; 16:3 adresa do bitoveho proudu LZW kodu
-	LD	DE,(DATA+2)		; 20:4 E = "zbyva bitu", D = "zbyva bajtu"
-	LD	A,(DATA+4)		; 13:3 cteny a uz rotovany bajt z bitoveho proudu
+	POP	BC			; 10:1 Nacti RET READxBITS
+	POP	AF			; 10:1 A = aktualni bajt z bitoveho proudu	
+	POP	DE			; 10:1 D = "zbyva bajtu", E = "zbyva bitu"
+	POP	HL			; 10:1 adresa na bajt cteny z bitoveho proudu
 	EXX				;  4:1
 	
 	LD	HL,$0000		; 10:3
 	LD	B,$08			;  7:2
 RxB_LOOP_LO:
-	DEC 	C			;  4:1
+	DEC	C			;  4:1
 	CALL	p,READ_BIT		; 17/10:3
 	RR	L			;  8:2 clear carry
 	DJNZ	RxB_LOOP_LO		;13/8:2
@@ -320,17 +304,18 @@ RxB_LOOP_LO:
 
 	LD	B,$08			;  7:2
 RxB_LOOP_HI:
-	DEC 	C			;  4:1
+	DEC	C			;  4:1
 	CALL	p,READ_BIT		; 17/10:3
 	RR	H			;  8:2 clear carry
 	DJNZ	RxB_LOOP_HI		;13/8:2
 
 RxB_EXIT:
-; Ulozeni promennych do pameti
+; Ulozeni promennych na zasobnik
 	EXX				;  4:1
-	LD	(DATA),HL		; 16:3 adresa do bitoveho proudu LZW kodu
-	LD	(DATA+2),DE		; 20:4 E = "zbyva bitu", D = "zbyva bajtu"
-	LD	(DATA+4),A		; 13:3 cteny a uz rotovany bajt z bitoveho proudu
+	PUSH	HL			; 11:1 adresa na bajt cteny z bitoveho proudu
+	PUSH	DE			; 11:1 D = "zbyva bajtu", E = "zbyva bitu"
+	PUSH	AF			; 11:1 A = aktualni bajt z bitoveho proudu	
+	PUSH	BC			; 11:1 Uloz RET READxBITS
 	EXX				;  4:1
 	
 	RET				; 10:1
@@ -380,8 +365,7 @@ STOPCODE:
 	LD	HL,$0000		; 10:3 = STOPCODE
 	SBC	HL,DE			; 15:2 clear carry from READxBITS
 ; Exit DECODE
-	LD	BC,$3F00		; 10:3 $3F00 => Clear Flash + Bright
-	JR	z,SET_FLASH_BRIGHT	;12/7:2
+	JR	z,EXIT_DECODE		;12/7:2
 	
 ; test CLEARCODE
 	LD	A,L			;  4:1 HL = $0001?
@@ -517,7 +501,7 @@ LZW_OVERFLOWS:
 	POP	HL			; 11:1 nacteny index !!!!!!!!!!!!!!!!!!!!!!!!
 	LD	(PREVIOUS_INDEX),HL	; 16:3 0000iiii iiiiiiii
 
-	JP	nz,D_NEXT_INDEX
+	JP	nz,D_NEXT_INDEX		; 10:3
 
 	EX	DE,HL			;  4:1
 	ADD	HL,HL			; 11:1
@@ -532,7 +516,7 @@ LZW_OVERFLOWS:
 	ADC	A,$00			;  7:2
 	LD	IXL,A			;  8:2
 		
-	JP	D_NEXT_INDEX
+	JP	D_NEXT_INDEX		; 10:3
 
 
 
@@ -558,8 +542,8 @@ ADR_FRAMEBUFF:
 	LD	A,$C0			;  7:2 $C000 = 49152 = 256x192
 	CP	D			;  4:1
 	LD	A,ERR_OWERFLOW_SCREEN	;  7:2
-	JP	z,ERROR_EXIT		; 
- 
+	JP	z,ERROR_EXIT		; 10:3
+
 ; D = BBRRRSSS E = CCCCC... 
 	LD	A,D			;  4:1 BBRRR...
 	RLCA				;  4:1
@@ -582,7 +566,7 @@ ADR_FRAMEBUFF:
 ; Rozlisujeme 3 varianty podle toho kolik je znamo uz barev:
 ; 1. Zadna? ( DB_FIRST_SEARCH )
 ;       Je cerna? 
-; 		ANO: Bude to Paper. ( tohle by melo vyresit monochromaticke obrazky )
+;		ANO: Bude to Paper. ( tohle by melo vyresit monochromaticke obrazky )
 ;	Shodna se sousednim Paper? ( i kdyz neni cerna )
 ;		ANO: Bude to novy Paper. Exit.
 ;		 NE: Bude to novy Ink!  ( cerna u monochromatickeho jeste dojde )  Draw.
@@ -595,15 +579,27 @@ ADR_FRAMEBUFF:
 ;		ANO: Je to Ink. Draw.
 ;		 NE: Bude to novy Paper. Exit.
 
+; Prvni nebo posledni v matici 8x8?
+	LD	A,D			;  4:1 Y
+	AND	$07			;  7:2
+	LD	B,A			;  4:1
+	LD	A,E			;  4:1 X
+	AND	$07			;  7:2
+	ADD	A,B			;  4:1 prvni = 0?
+	JR	z,DB_FIRST_SEARCH	;12/7:2
+	CP	$0E			;  7:2 posledni = 14?
 	LD	A,(HL)			;  7:1
-	AND	%11000000		;  7:2 Flash (Paper undefined) + Bright (Ink undefined)
-	CP	%10000000		;  7:2
-	JR	c,DB_COLORS_FIXED	;12/7:2  => 2. Paper found + Ink found / undefined
-	JR	nz,DB_FIRST_SEARCH	;12/7:2  => 1. Paper undefined + Ink undefined
+	JR	nz,DB_NO_LAST		;12/7:2
+; Vymazeme Flash a Bright
+	AND	$3F			;  7:2 Paper + Ink
+DB_NO_LAST:
+
+	BIT	7,(HL)			; 12:2 Flash (Paper undefined)
+	LD	(HL),A			;  7:1
+	JR	z,DB_COLORS_FIXED	;12/7:2
 
 ; 3. Paper undefined + Ink found -----------------------
 DB_INK_FIXED:
-	LD	A,(HL)			;  7:1
 	AND	$07			;  7:2
 	RLCA				;  4:1
 	RLCA				;  4:1
@@ -614,17 +610,19 @@ DB_INK_FIXED:
 
 ; 1. Paper undefined + Ink undefined -------------------
 DB_FIRST_SEARCH:
-	LD	A,C			;  4:1
-	OR	A			;  4:1 Black?
+	LD	(HL),$C0		; 10:2 set Flash + Bright + Black + Black
+	OR	C			;  4:1 A + C = 0 + C = Black?
 	JR	z,DB_NEW_PAPER		;12/7:2
 	
 ; Pokus o kontinuitu v barvach mezi 8x8 maticemi. Porovname s levou matici, a pokud to nejde tak s horni.
 	PUSH	HL			; 11:1
 	LD	A,L			;  4:1
-	AND	$1F			;  7:2
+	AND	$1F			;  4:1
 	JR	nz,DB_DALSI_SLOUPEC	;12/7:2
-	ADD	A,$21			;  7:2
-	LD	L,A			;  4:1
+	LD	A,C			;  4:1
+	LD	BC,$FFE1		; 10:3 -31 = -$1F
+	ADD	HL,BC			; 11:1	
+	LD	C,A			;  4:1
 DB_DALSI_SLOUPEC:
 	DEC	HL			;  4:1
 ; test Paper
@@ -639,11 +637,10 @@ DB_NEW_PAPER:
 	OR	C			;  4:1
 	AND	%01111111		;  7:2 Flash clear
 	LD	(HL),A			;  4:1
-; 	Propadne na DRAW_BIT_EXIT 
+;	Propadne na DRAW_BIT_EXIT 
 
 ; 2. Paper found + Ink found / undefined ---------------
 DB_COLORS_FIXED:
-	LD	A,(HL)			;  7:1
 	AND	$38			;  7:2
 	CP	C			;  4:1 Test Paper
 	JR	z,DB_EXIT		;12/7:2
