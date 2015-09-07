@@ -27,6 +27,10 @@ ORG progStart
 ; AAA..... ........ = segment adresy musi lezet na adrese delitelne 16kb
 ;  =
 ; AAAiiiii iiiiiii0 = adresa predchozi polozky slovniku
+
+; Globalni pouziti registru:
+;	IXH = MIN_SIRKA_LZW
+;	IXL = AKT_SIRKA_LZW
   
 ERR_OK			EQU	0
 ERR_GIF_NOT_FOUND	EQU	1	; != "G"
@@ -54,22 +58,6 @@ MAIN_EXIT:
 	LD	C,A			;  4:1 = exit code
 	LD	B,$00			;  7:2
 	RET				; 10:1
-
-
-DATA:
-DW	0	;    adresa odkud
-DB	0	; +2 zbyva bitu
-DB	0	; +3 zbyva bajtu
-DB	0	; +4 zbytek uz rotovaneho bajtu
-DB	0	; +5 (last index != new index)?
-
-
-PREVIOUS_INDEX:	; predchozi index z bitoveho proudu
-DW	0	;
-
-; Globalni pouziti registru:
-;	IXH = MIN_SIRKA_LZW:
-;	IXL = AKT_SIRKA_LZW:
 
 
 
@@ -229,7 +217,6 @@ I_SLOVNIK:
 	LD	(DE),A			;  7:1 GRB.....
 	INC	DE			;  6:1
 	DJNZ	I_SLOVNIK		;13/8:2
-	LD	BC,$00C0		;  7:2 set Flash + Bright + Black + Black
 	RET				; 10:1
 
 
@@ -349,7 +336,7 @@ DECODE:
 
 D_FIRST_INDEX:
 	CALL	READxBITS		; 17:3 vystup: HL, clear carry
-	LD	(PREVIOUS_INDEX),HL	; 16:3
+	LD	(PREVIOUS_INDEX+1),HL	; 16:3
 	
 	ADD	HL,HL			; 11:1
 	LD	A,H			;  4:1
@@ -397,7 +384,7 @@ MAX_INDEX:
 	PUSH	AF			; 11:1 !!!!!!!!!!!! zero flag = new index
 	EX	DE,HL			;  4:1
 	JR	nz,D_INDEX_FOUND	;12/7:2
-	LD	HL,(PREVIOUS_INDEX)	; 16:3 DE = 0
+	LD	HL,(PREVIOUS_INDEX+1)	; 16:3 DE = 0
 D_INDEX_FOUND:
 
 ;   HL = 0000iiii iiiiiiii
@@ -457,7 +444,7 @@ D_DRAW_PIXELS:
 D_LOAD_K:
 	LD	DE,$0000		; 10:3 = K
 	POP	AF			; 10:1 !!!!!!!!!!!! zero flag = new_index
-	JR	nz,D_MAKE_NEW_INDEX	;12/7:2
+	JR	nz,PREVIOUS_INDEX	;12/7:2
 	
 	LD	H,D			;  4:1
 	LD	L,E			;  4:1
@@ -466,9 +453,8 @@ D_LOAD_K:
 ; Vytvoreni nove polozky ve slovniku
 ; DE = K
 ; [DE] = GRBiiiii iiiiiiis
-D_MAKE_NEW_INDEX:
-
-	LD	HL,(PREVIOUS_INDEX)	; 16:3 0000iiii iiiiiiii, na tohle se budeme odkazovat
+PREVIOUS_INDEX:
+	LD	HL,$0000		; 10:3 0000iiii iiiiiiii, na tohle se budeme odkazovat
 	ADD	HL,HL			; 11:1
 	INC	DE			;  6:1
 	LD	A,(DE)			;  7:1 GRB.....
@@ -499,7 +485,7 @@ LZW_OVERFLOWS:
 	
 ; Zamena predchozi za posledni nacteny index
 	POP	HL			; 11:1 nacteny index !!!!!!!!!!!!!!!!!!!!!!!!
-	LD	(PREVIOUS_INDEX),HL	; 16:3 0000iiii iiiiiiii
+	LD	(PREVIOUS_INDEX+1),HL	; 16:3 0000iiii iiiiiiii
 
 	JP	nz,D_NEXT_INDEX		; 10:3
 
@@ -617,7 +603,7 @@ DB_FIRST_SEARCH:
 ; Pokus o kontinuitu v barvach mezi 8x8 maticemi. Porovname s levou matici, a pokud to nejde tak s horni.
 	PUSH	HL			; 11:1
 	LD	A,L			;  4:1
-	AND	$1F			;  4:1
+	AND	$1F			;  7:2
 	JR	nz,DB_DALSI_SLOUPEC	;12/7:2
 	LD	A,C			;  4:1
 	LD	BC,$FFE1		; 10:3 -31 = -$1F
