@@ -3,6 +3,10 @@ GIF Reader displays GIF images on the ZX Spectrum
 
 Convert 256 x 192 GIF to SCR
 
+Support for calling directly from Basic:
+
+    PRINT USR progStart, ADR_GIF
+
 551 bytes code + 8 KB LZW dictionary ( 4096 * 2 bytes )
 
     HI       LO
