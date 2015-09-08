@@ -159,7 +159,7 @@ I_FRAME_0x2C:
 	INC	HL			;  6:1 Konecne jsme na hlavicce prvniho bloku obsahujici bitovy proud
 
 ; Ulozeni promennych pro bitovy proud do pameti
-	LD	D,(HL)			;  7:1 Hlavicky datoveho bloku obsahuje pocet nasledujicich bajtu
+	LD	D,(HL)			;  7:1 Hlavicka datoveho bloku obsahuje pocet nasledujicich bajtu
 	INC	HL			;  6:1
 	DEC	D			;  4:1
 	DEC	D			;  4:1 snizime pocet o 2 bajty, ktere rovnou nacteme do pomocne 16 bitove promenne
@@ -177,7 +177,7 @@ I_FRAME_0x2C:
 	PUSH	AF			; 11:1 RET
 
 	LD	HL,$ffff		; 10:3
-	LD	(ADR_FRAMEBUFF+1),HL	; 16:3 "curzor" do obrazu nastavime na 0,0j
+	LD	(ADR_FRAMEBUFF+1),HL	; 16:3 "curzor" do obrazu nastavime na 0,0
 	INC	HL			;  6:1 =0
 	INC	HL			;  6:1 =1
 I_LOOP:
@@ -481,7 +481,7 @@ LZW_OVERFLOWS:
 	CP	$0C			;  7:2 - 12
 	JP	z,D_NEXT_INDEX		; 10:3
 
-; Nemuzeme si dovolit, aby (LZW_OVERFLOWS - 1) bylo cislo o 13 jednickach. Na 50% by jsme spatnym vymaskovanim neprecetli CLEARCODE
+; Nemuzeme si dovolit, aby (LZW_OVERFLOWS - 1) bylo cislo o 13 jednickach. Na 50% bychom spatnym vymaskovanim neprecetli CLEARCODE
 	EX	DE,HL			;  4:1
 	ADD	HL,HL			; 11:1
 	LD	(LZW_OVERFLOWS+1),HL	; 16:3	
