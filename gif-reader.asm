@@ -50,8 +50,12 @@ MAIN:
 	
 	LD	(ERROR_EXIT+1),SP	; 20:4
 	CALL	INIT			; 17:3
-	JP	DECODE			; 10:3 Na zasobniku mame data a chceme minimalizovat naklady k pristupu k nim. 
-MAIN_EXIT:
+	JP	DECODE			; 10:3 Na zasobniku mame data a chceme minimalizovat naklady k pristupu k nim.
+EXIT_DECODE:
+	XOR	A			;  4:1 = ERR_OK
+ERROR_EXIT:
+; stala se chyba, ukoncime program
+	LD	SP,$0000		; 10:3
 	POP	HL			; 10:1
 	EXX				;  4:1
 	LD	C,A			;  4:1 = exit code
@@ -155,17 +159,25 @@ I_FRAME_0x2C:
 	INC	HL			;  6:1 Konecne jsme na hlavicce prvniho bloku obsahujici bitovy proud
 
 ; Ulozeni promennych pro bitovy proud do pameti
-	LD	D,(HL)			;  7:1 nacteni hlavicky prvniho datoveho bloku
+	LD	D,(HL)			;  7:1 Hlavicky datoveho bloku obsahuje pocet nasledujicich bajtu
 	INC	HL			;  6:1
-	POP	AF			; 10:1 Nacti RET
-	PUSH	HL			; 11:1 adresa na bajt cteny z bitoveho proudu
+	DEC	D			;  4:1
+	DEC	D			;  4:1 snizime pocet o 2 bajty, ktere rovnou nacteme do pomocne 16 bitove promenne
 	LD	E,$09			;  7:2 pocet zbyvajicich bitu se odcita pred ctenim
+	POP	AF			; 10:1 Nacti RET aby nezavazelo na zasobniku
 	PUSH	DE			; 11:1 D = "zbyva bajtu", E = "zbyva bitu"
-	LD	D,(HL)			;  7:1
-	PUSH	DE			; 11:1 aktualni bajt z bitoveho proudu	
+	LD	E,(HL)			;  7:1 nizsi bajt do pomocne 16 bitove promenne
+	INC	HL			;  6:1
+	LD	D,(HL)			;  7:1 vyssi bajt do pomocne 16 bitove promenne
+	INC	HL			;  6:1
+	PUSH	HL			; 11:1 adresa na bajt cteny z bitoveho proudu ( ted uz je to treti )
+	LD	H,(HL)			;  7:1 hodnota aktualniho (tretiho) bajtu z bitoveho proudu
+	PUSH	HL			; 11:1
+	PUSH	DE			; 11:1 ulozeni 16 bitove promenne na zasobnik
 	PUSH	AF			; 11:1 RET
+
 	LD	HL,$ffff		; 10:3
-	LD	(ADR_FRAMEBUFF+1),HL	; 16:3 "curzor" do obrazu nastavime na 0,0
+	LD	(ADR_FRAMEBUFF+1),HL	; 16:3 "curzor" do obrazu nastavime na 0,0j
 	INC	HL			;  6:1 =0
 	INC	HL			;  6:1 =1
 I_LOOP:
@@ -221,90 +233,62 @@ I_SLOVNIK:
 
 
 ; ----------------------------------------------
-EXIT_DECODE:
-	XOR	A			;  4:1 = ERR_OK
-ERROR_EXIT:
-; stala se chyba, ukoncime program
-	LD	SP,$0000		; 10:3
-	JP	MAIN_EXIT		; 12:2
+; Fce nacte IXL bitu z bitoveho proudu
+; Vstup: IXL = kolik nacist bitu
+; Vystup: DE
+READxBITS:
+; Nacteni promennych ze zasobniku
 
+	POP	DE			; 10:1 Nacti RET READxBITS
+	POP	BC			; 10:1 Nacteme uz rotovane 16 bitove cislo
+	LD	HL,(LZW_OVERFLOWS+1)	; 16:3
+	DEC	HL			;  6:1
+	LD	A,L			;  4:1 Maska nizsiho bajtu
+	AND	C			;  4:1 Hodnota nizsiho bajtu
+	LD	L,A			;  4:1
+	LD	A,H			;  4:1 Maska vyssiho bajtu
+	AND	B			;  4:1 Hodnota vyssiho bajtu
+	LD	H,A			;  4:1 HL = vysledek, DE = RET READxBITS
+	EX	DE,HL			;  4:1 prohodime
 
+; ted bychom uz mohli zavolat JP (HL), ale musime pripravit na pristi cteni to 16 bitove cislo ulozene v BC
 
-; ----------------------------------------------
-; Fce cte jeden bit z bitoveho proudu
-; Vstup: 
-;	HL  adresa prave cteneho bajtu
-;	E   "zbyva bitu", 
-;	D   "zbyva bajtu"
-;	A   uz rotovany prave cteny bajt
-; Vystup: 
-;	hodnota cteneho bitu je v carry
-READ_BIT:
 	EXX				;  4:1
+	POP	AF			; 10:1 A = aktualni bajt z bitoveho proudu
+	POP	HL			; 10:1 adresa na bajt cteny z bitoveho proudu
+	POP	DE			; 10:1 D = "zbyva bajtu", E = "zbyva bitu"
+	LD	B,IXL			;  8:2 AKT_SIRKA_LZW = pocet ctenych bitu
+RxB_LOOP:
 	DEC	E			;  4:1 "zbyva bitu", pred prvnim ctenim musi obsahovat 9, a ne 8
-	JR	nz,RB_ROTATE		;12/7:2
+	JR	nz,RxB_ROTATE		;12/7:2
 
 	INC	HL			;  6:1 zvysime adresu o jedna
 	LD	A,(HL)			;  7:1 cteny bajt z bitoveho proudu
 	LD	E,$08			;  7:2 "zbyva bitu", tady staci uz 8, protoze jeden bit ted precteme
 
 	DEC	D			;  4:1 zbyva bajtu
-	JR	nz,RB_ROTATE		;12/7:2
+	JR	nz,RxB_ROTATE		;12/7:2
 
 	LD	D,A			;  7:1 byla to hlavicka s poctem bajtu dalsiho bloku
 	INC	HL			;  6:1 zvysime adresu o jedna
 	LD	A,(HL)			;  7:1 cteny bajt z bitoveho proudu
 
-RB_ROTATE:
+RxB_ROTATE:
 	RRCA				;  4:1
-	EXX				;  4:1
-	RET				; 10:1
-
-
-
-; ----------------------------------------------
-; Fce nacte IXL bitu z bitoveho proudu
-; Vstup: IXL = kolik nacist bitu
-; Vystup: HL, clear carry
-; Nemeni: DE
-READxBITS:
-	LD	C,IXL			;  8:2 AKT_SIRKA_LZW = pocet ctenych bitu
-; Nacteni promennych ze zasobniku
-	EXX				;  4:1
-	POP	BC			; 10:1 Nacti RET READxBITS
-	POP	AF			; 10:1 A = aktualni bajt z bitoveho proudu	
-	POP	DE			; 10:1 D = "zbyva bajtu", E = "zbyva bitu"
-	POP	HL			; 10:1 adresa na bajt cteny z bitoveho proudu
-	EXX				;  4:1
 	
-	LD	HL,$0000		; 10:3
-	LD	B,$08			;  7:2
-RxB_LOOP_LO:
-	DEC	C			;  4:1
-	CALL	p,READ_BIT		; 17/10:3
-	RR	L			;  8:2 clear carry
-	DJNZ	RxB_LOOP_LO		;13/8:2
-
-	BIT	7,C			;  8:2
-	JR	nz,RxB_EXIT		;12/7:2
-
-	LD	B,$08			;  7:2
-RxB_LOOP_HI:
-	DEC	C			;  4:1
-	CALL	p,READ_BIT		; 17/10:3
-	RR	H			;  8:2 clear carry
-	DJNZ	RxB_LOOP_HI		;13/8:2
-
-RxB_EXIT:
+	EXX				;  4:1
+        RR	B			;  8:2
+        RR	C			;  8:2
+	EXX				;  4:1
+        DJNZ	RxB_LOOP		;13/8:2
+        
 ; Ulozeni promennych na zasobnik
-	EXX				;  4:1
-	PUSH	HL			; 11:1 adresa na bajt cteny z bitoveho proudu
 	PUSH	DE			; 11:1 D = "zbyva bajtu", E = "zbyva bitu"
-	PUSH	AF			; 11:1 A = aktualni bajt z bitoveho proudu	
-	PUSH	BC			; 11:1 Uloz RET READxBITS
+	PUSH	HL			; 11:1 adresa na bajt cteny z bitoveho proudu
+	PUSH	AF			; 11:1 A = aktualni bajt z bitoveho proudu
 	EXX				;  4:1
-	
-	RET				; 10:1
+	PUSH	BC			; 11:1 Ulozime uz rotovane 16 bitove cislo
+	JP	(HL)			;  4:1
 ;  ----------------------------------------------
 
 
@@ -329,12 +313,13 @@ RxB_EXIT:
 ; return to LOOP POINT
 ; **********************************************************************
 DECODE:
-	CALL	READxBITS		; 17:3 vystup: HL, clear carry
+	CALL	READxBITS		; 17:3 vystup: DE
 ; vysledek ignorujeme melo by to byt CLEARCODE
 ; nacteme prvni index, ktery musi byt mensi jak CLEARCODE
 
 D_FIRST_INDEX:
-	CALL	READxBITS		; 17:3 vystup: HL, clear carry
+	CALL	READxBITS		; 17:3 vystup: DE
+	EX	DE,HL			;  4:1
 	LD	(PREVIOUS_INDEX+1),HL	; 16:3
 	
 	ADD	HL,HL			; 11:1
@@ -344,14 +329,14 @@ D_FIRST_INDEX:
 	CALL	DRAW_BIT		; 17:3
 	
 D_NEXT_INDEX:
-	CALL	READxBITS		; 17:3 vystup: HL, clear carry
+	CALL	READxBITS		; 17:3 vystup: DE
 
-	EX	DE,HL			;  4:1
 STOPCODE:
 	LD	HL,$0000		; 10:3 = STOPCODE
+	AND	A			;  4:1 clear carry
 	SBC	HL,DE			; 15:2 clear carry from READxBITS
 ; Exit DECODE
-	JR	z,EXIT_DECODE		;12/7:2
+	JP	z,EXIT_DECODE		; 10:3
 	
 ; test CLEARCODE
 	LD	A,L			;  4:1 HL = $0001?
@@ -488,18 +473,19 @@ LZW_OVERFLOWS:
 
 	JP	nz,D_NEXT_INDEX		; 10:3
 
-	EX	DE,HL			;  4:1
-	ADD	HL,HL			; 11:1
-	LD	(LZW_OVERFLOWS+1),HL	; 16:3
-	
 ; 13 bitova nedokumentovana obskurni praktika...  :(
 ; Pokud cteni dalsiho kodu znamena, ze potrebuji cist o bit vice, tak o ten bit vice ctu.
 ; Pokud ale o bit vice znamena cist 13 bitu, tak ctu stale 12 bitu a doufam, ze dalsi kod bude signal "clear code" nebo nizsi jak 4096.
 	
 	LD	A,IXL			;  8:2
 	CP	$0C			;  7:2 - 12
-	ADC	A,$00			;  7:2
-	LD	IXL,A			;  8:2
+	JP	z,D_NEXT_INDEX		; 10:3
+
+; Nemuzeme si dovolit, aby (LZW_OVERFLOWS - 1) bylo cislo o 13 jednickach. Na 50% by jsme spatnym vymaskovanim neprecetli CLEARCODE
+	EX	DE,HL			;  4:1
+	ADD	HL,HL			; 11:1
+	LD	(LZW_OVERFLOWS+1),HL	; 16:3	
+	INC	IXL			;  8:2
 		
 	JP	D_NEXT_INDEX		; 10:3
 
