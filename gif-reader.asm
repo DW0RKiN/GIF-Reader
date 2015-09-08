@@ -187,13 +187,7 @@ I_LOOP:
 	LD	B,L			;  4:1 realny CLEARCODE = 4,8,16,32,64,128,0(=256) 
 
 	INC	HL			;  6:1
-	LD	(STOPCODE+1),HL		; 16:3
-	INC	HL			;  6:1
-	LD	(MAX_INDEX+1),HL	; 16:3 ukazuje na novou, jeste nevyplnenou polozku
-	DEC	HL			;  6:1
-	DEC	HL			;  6:1
-	ADD	HL,HL			; 11:1
-	LD	(LZW_OVERFLOWS+1),HL	; 16:3 2x realne CLEARCODE
+	LD	(STOPCODE+1),HL		; 16:3 zbytek jako LZW_OVERFLOWS a MAX_INDEX se nastavi po prvnim CLEARCODE
 
 ; Nastaveni slovniku
 ; B = realny CLEARCODE
@@ -315,19 +309,29 @@ RxB_ROTATE:
 DECODE:
 	CALL	READxBITS		; 17:3 vystup: DE
 ; vysledek ignorujeme melo by to byt CLEARCODE
-; nacteme prvni index, ktery musi byt mensi jak CLEARCODE
+; navic je spatne vymaskovane neinicializovanou hodnotou LZW_OVERFLOWS
 
-D_FIRST_INDEX:
+D_CLEAR_CODE:
+	LD	HL,(STOPCODE+1)		; 10:3 = STOPCODE
+	INC	HL			;  6:1 = MAX_INDEX
+	LD	(MAX_INDEX+1),HL	; 16:3
+	DEC	HL			;  6:1
+	DEC	HL			;  6:1 = CLEARCODE
+	ADD	HL,HL			; 11:1
+	LD	(LZW_OVERFLOWS+1),HL	; 16:3 2x realne CLEARCODE
+	LD	IXL,IXH			;  8:2 AKT_SIRKA_LZW = MIN_SIRKA_LZW
+
+; nacteme prvni index, ktery musi byt mensi jak CLEARCODE
 	CALL	READxBITS		; 17:3 vystup: DE
 	EX	DE,HL			;  4:1
 	LD	(PREVIOUS_INDEX+1),HL	; 16:3
-	
+
 	ADD	HL,HL			; 11:1
 	LD	A,H			;  4:1
 	OR	ADR_SEG_SLOVNIKU	;  7:2
 	LD	H,A			;  4:1
 	CALL	DRAW_BIT		; 17:3
-	
+
 D_NEXT_INDEX:
 	CALL	READxBITS		; 17:3 vystup: DE
 
@@ -342,18 +346,8 @@ STOPCODE:
 	LD	A,L			;  4:1 HL = $0001?
 	DEC	A			;  4:1
 	OR	H			;  4:1
-	JR	nz,D_NOT_FOUND_CC	;12/7:2
-; CLEARCODE
-	ADD	HL,DE			; 11:1 1 + CLEARCODE = STOPCODE
-	INC	HL			;  6:1 = MAX_INDEX
-	LD	(MAX_INDEX+1),HL	; 16:3
-	EX	DE,HL			;  4:1 = CLEARCODE
-	ADD	HL,HL			; 11:1
-	LD	(LZW_OVERFLOWS+1),HL	; 16:3 2x realne CLEARCODE
-	LD	IXL,IXH			;  8:2 AKT_SIRKA_LZW = MIN_SIRKA_LZW
-	JR	D_FIRST_INDEX	; 12:2
+	JR	z,D_CLEAR_CODE		;12/7:2
 
-D_NOT_FOUND_CC:
 	PUSH	DE			; 11:1 nacteny index !!!!!!!!!!!!!!!!!!!!!!!! na konci ho ulozime do PREVIOUS_INDEX
 	
 ; zjisteni zda je nacteny index uz ve slovniku
