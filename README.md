@@ -7,7 +7,7 @@ Support for calling directly from Basic:
 
     PRINT USR progStart, ADR_GIF
 
-537 bytes code + 8 KB LZW dictionary ( 4096 * 2 bytes )
+535 bytes code + 8 KB LZW dictionary ( 4096 * 2 bytes )
 
     HI       LO
     GRBiiiii iiiiiiiS = S = stop bit, nastaven u indexu mensich jak CLEARCODE
