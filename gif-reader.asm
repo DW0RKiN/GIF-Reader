@@ -380,13 +380,8 @@ D_INDEX_FOUND:
 ; [HL] = GRBiiiii iiiiiiis 
 ;   HL = AAAiiiii iiiiiii0
 
-
+	JR	D_ENTRY			; 12:2
 D_LOOP:
-	INC	DE			;  6:1
-	PUSH	HL			; 11:1
-	LD	A,(HL)			;  7:1
-	RRCA				;  4:1 stop bit?
-	JR	c,D_FOUND_K		;12/7:2
 
 ; L =  [HL]
 ; H = ([HL+1] & $1F) + ADR_SEG_SLOVNIKU
@@ -399,10 +394,13 @@ D_LOOP:
 	AND	H			;  4:1 000iiiii
 	OR	ADR_SEG_SLOVNIKU	;  7:2 AAAiiiii
 	LD	H,A			;  4:1
-	JR	D_LOOP			; 12:2
+D_ENTRY:
+	INC	DE			;  6:1
+	PUSH	HL			; 11:1
+	LD	A,(HL)			;  7:1
+	RRCA				;  4:1 stop bit?
+	JR	nc,D_LOOP		;12/7:2
 	
-	
-D_FOUND_K:
 ; Dosli jsme na prvni index slova
 ; BC obsahuje pocet polozek na zasobniku
 ; Zasobnik je plny sudych adres na predchozi index ve slove
