@@ -386,7 +386,7 @@ D_LOOP:
 ; L =  [HL]
 ; H = ([HL+1] & $1F) + ADR_SEG_SLOVNIKU
 
-	LD	A,(HL)			;  7:1
+	RLCA				;  4:1
 	INC	HL			;  6:1
 	LD	H,(HL)			;  7:1 GRBiiiii
 	LD	L,A			;  4:1
