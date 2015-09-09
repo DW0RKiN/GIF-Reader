@@ -421,12 +421,10 @@ D_DRAW_PIXELS:
 
 D_LOAD_K:
 	LD	DE,$0000		; 10:3 = K
-	POP	AF			; 10:1 !!!!!!!!!!!! zero flag = new_index
-	JR	nz,PREVIOUS_INDEX	;12/7:2
-	
 	LD	H,D			;  4:1
 	LD	L,E			;  4:1
-	CALL	DRAW_BIT		; 17:3
+	POP	AF			; 10:1 !!!!!!!!!!!! zero flag = new_index
+	CALL	z,DRAW_BIT		;17/10:3
 
 ; Vytvoreni nove polozky ve slovniku
 ; DE = K
@@ -438,16 +436,16 @@ PREVIOUS_INDEX:
 	LD	A,(DE)			;  7:1 GRB.....
 	AND	$E0			;  7:2 GRB00000
 	OR	H			;  4:1 GRBiiiii
-	LD	H,A			;  4:1
+	LD	H,A			;  4:1 HL = GRBiiiii iiiiiii0 = obsah nove polozky slovniku 
 	
 	EX	DE,HL			;  4:1
 	POP	HL			; 10:1 MAX_INDEX !!!!!!!!!!!!!!!!!!!!!!!!
 	PUSH	HL			; 11:1
-; HL = 0000iiii iiiiiiii = adresa nove polozky slovniku
+; HL = 0000iiii iiiiiiii = index nove polozky slovniku
 	ADD	HL,HL			; 11:1 0000iiii iiiiiii0
 	LD	A,ADR_SEG_SLOVNIKU	;  7:2 AAA00000
 	OR	H			;  4:1 AAAiiiii
-	LD	H,A			;  4:1 AAAiiiii iiiiiii0
+	LD	H,A			;  4:1 HL = AAAiiiii iiiiiii0 = adresa nove polozky slovniku 
 	
 	LD	(HL),E			;  7:1
 	INC	HL			;  6:1
@@ -490,6 +488,8 @@ LZW_OVERFLOWS:
 ; Vstup: 
 ;  HL  = (AAAiiiii iiiiiii0)
 ; [HL] = (GRBiiiii iiiiiiis)
+; Vystup:
+; HL = HL+1, DE = DE, BC = BC, A = ?, flags = ?
 DRAW_BIT:
 	INC	HL			;  6:1
 	LD	A,(HL)			;  7:1 GRB?????
