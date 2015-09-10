@@ -353,8 +353,7 @@ STOPCODE:
 ; zjisteni zda je nacteny index uz ve slovniku
 ; old index => HL = CODE
 ; new index => HL = CODE-1 = PREVIOUS_INDEX
-MAX_INDEX:
-	LD	HL,$0000		; 10:3 prvni nevyuzity index
+	LD	HL,(MAX_INDEX+1)	; 16:3 prvni nevyuzity index
 	SBC	HL,DE			; 15:2
 	PUSH	AF			; 11:1 !!!!!!!!!!!! zero flag = new index
 	EX	DE,HL			;  4:1
@@ -415,64 +414,67 @@ D_DRAW_PIXELS:
 	JR	nz,D_DRAW_PIXELS	;12/7:2
 
 D_LOAD_K:
-	LD	DE,$0000		; 10:3 = K
-	LD	H,D			;  4:1
-	LD	L,E			;  4:1
+	LD	BC,$0000		; 10:3 = K
+	LD	H,B			;  4:1
+	LD	L,C			;  4:1
 	POP	AF			; 10:1 !!!!!!!!!!!! zero flag = new_index
 	CALL	z,DRAW_BIT		;17/10:3
 
 ; Vytvoreni nove polozky ve slovniku
-; DE = K
-; [DE] = GRB..... ........
+; BC = K
+; [BC] = GRB..... ........
 PREVIOUS_INDEX:
 	LD	HL,$0000		; 10:3 0000iiii iiiiiiii, na tohle se budeme odkazovat
-	ADD	HL,HL			; 11:1
-	INC	DE			;  6:1
-	LD	A,(DE)			;  7:1 GRB.....
+	ADD	HL,HL			; 11:1 000iiiii iiiiiii0
+	INC	BC			;  6:1
+	LD	A,(BC)			;  7:1 GRB.....
 	AND	$E0			;  7:2 GRB00000
-	OR	H			;  4:1
-	LD	B,A			;  4:1 GRBiiiii
-	LD	C,L			;  4:1 BC = obsah nove polozky slovniku
+	OR	H			;  4:1 GRBiiiii
+	LD	B,A			;  4:1
+	LD	C,L			;  4:1 BC =  = obsah nove polozky slovniku
+
+MAX_INDEX:
+	LD	DE,$0000		; 10:3 prvni nevyuzity index
+	INC	DE			;  6:1
+
+; Pokud je to posledni kod, co se vleze do soucasne sirky bitu LZW kodu, tak priste cteme kody o bit vetsi
+LZW_OVERFLOWS:
+	LD	HL,$0000		; 10:3
+	SBC	HL,DE			; 15:2 clear carry <- OR H
+	
+; encoder keeps on writing codes (deferred operation)
+	JR	c,D_POP_AND_READ_CODE	;12/7:2 MAX_INDEX = 4096? -> Slovnik je zaplnen, uz dale nezapisujeme
+
+	JR	nz,D_WRITE_CODE		;12/7:2
+
+	LD	A,D			;  4:1
+	CP	$10			;  7:2 DE = 4096? = %00010000 00000000
+	JP	z,D_WRITE_CODE		; 10:3 MAX_INDEX = 4095?, tak nezvedam sirku na 13 bitu a naposledy ulozim slovo do slovniku
+
+	INC	IXL			;  8:2
+	ADD	HL,DE			; 11:1
+	ADD	HL,HL			; 11:1
+	LD	(LZW_OVERFLOWS+1),HL	; 16:3 LZW_OVERFLOWS = 2 * LZW_OVERFLOWS
+		
+D_WRITE_CODE:
+	EX	DE,HL			;  4:1
+	LD	(MAX_INDEX+1),HL	; 16:3
+	DEC	HL			;  4:1	
+	ADD	HL,HL			; 11:1 000iiiii iiiiiii0
+	LD	A,ADR_SEG_SLOVNIKU	;  7:2 AAA00000
+	OR	H			;  4:1 AAAiiiii
+	LD	H,A			;  4:1 HL = adresa nove polozky slovniku 
+
+	LD	(HL),C			;  7:1
+	INC	HL			;  6:1
+	LD	(HL),B			;  7:1
+	
+D_POP_AND_READ_CODE:
 
 ; Zamena predchozi za posledni nacteny index
 	POP	HL			; 11:1 nacteny index !!!!!!!!!!!!!!!!!!!!!!!!
 	LD	(PREVIOUS_INDEX+1),HL	; 16:3 0000iiii iiiiiiii
 
-	LD	HL,(MAX_INDEX+1)	; 16:3
-	INC	HL			;  6:1
-	LD	(MAX_INDEX+1),HL	; 16:3
-	ADD	HL,HL			; 11:1 000iiiii iiiiiii0
-	EX	DE,HL			;  4:1
-
-; Pokud je to posledni kod, co se vleze do soucasne sirky bitu LZW kodu, tak priste cteme kody o bit vetsi
-LZW_OVERFLOWS:
-	LD	HL,$0000		; 10:3
-	ADD	HL,HL			; 11:1 clear carry
-	SBC	HL,DE			; 15:2
-	EX	DE,HL			;  4:1
-	JR	nz,D_WRITE_CODE		;12/7:2
-
-; Pokud je index nove polozky roven 4095, tzn. maximalni mozna 12 bitova polozka, tak uz nic neukladam, ani nic nezvetsuji, zustavam na 12 bitech sirky
-; Pristi kod by mel byt CLEARCODE, pokud nebude, tak to bude fungovat dal, krome nacteni nevytvoreneho indexu 4095...
-
-	LD	A,IXL			;  8:2
-	CP	$0C			;  7:2 - 12
-	JP	z,D_READ_CODE		; 10:3
-
-	INC	IXL			;  8:2
-	LD	(LZW_OVERFLOWS+1),HL	; 16:3 LZW_OVERFLOWS = 2 * LZW_OVERFLOWS
-		
-D_WRITE_CODE:
-
-	DEC	HL			;  6:1
-	LD	A,ADR_SEG_SLOVNIKU	;  7:2 AAA00000
-	OR	H			;  4:1 AAAiiiii
-	LD	H,A			;  4:1 HL = adresa nove polozky slovniku 
-	
-	LD	(HL),B			;  7:1
-	DEC	HL			;  6:1
-	LD	(HL),C			;  7:1
-		
 	JP	D_READ_CODE		; 10:3
 
 
