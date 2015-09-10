@@ -431,7 +431,7 @@ PREVIOUS_INDEX:
 	AND	$E0			;  7:2 GRB00000
 	OR	H			;  4:1 GRBiiiii
 	LD	B,A			;  4:1
-	LD	C,L			;  4:1 BC =  = obsah nove polozky slovniku
+	LD	C,L			;  4:1 BC = obsah nove polozky slovniku
 
 MAX_INDEX:
 	LD	DE,$0000		; 10:3 prvni nevyuzity index
@@ -443,13 +443,13 @@ LZW_OVERFLOWS:
 	SBC	HL,DE			; 15:2 clear carry <- OR H
 	
 ; encoder keeps on writing codes (deferred operation)
-	JR	c,D_POP_AND_READ_CODE	;12/7:2 MAX_INDEX = 4096? -> Slovnik je zaplnen, uz dale nezapisujeme
+	JR	c,D_POP_AND_READ_CODE	;12/7:2 MAX_INDEX+1 = 4097? -> Slovnik je zaplnen, uz dale nezapisujeme
 
 	JR	nz,D_WRITE_CODE		;12/7:2
 
 	LD	A,D			;  4:1
-	CP	$10			;  7:2 DE = 4096? = %00010000 00000000
-	JP	z,D_WRITE_CODE		; 10:3 MAX_INDEX = 4095?, tak nezvedam sirku na 13 bitu a naposledy ulozim slovo do slovniku
+	CP	$10			;  7:2 4096 = %00010000 00000000
+	JP	z,D_WRITE_CODE		; 10:3 MAX_INDEX+1 = 4096? -> tak nezvedam sirku na 13 bitu a naposledy ulozim slovo do slovniku
 
 	INC	IXL			;  8:2
 	ADD	HL,DE			; 11:1
@@ -521,103 +521,66 @@ ADR_FRAMEBUFF:
 	XOR	B			;  4:1 RRRCCCCC
 	LD	L,A			;  4:1
 ; H = 010110BB L = RRRCCCCC
-
-; ----------------------------------------------------------
-; Rozlisujeme 3 varianty podle toho kolik je znamo uz barev:
-; 1. Zadna? ( DB_FIRST_SEARCH )
-;       Je cerna? 
-;		ANO: Bude to Paper. ( tohle by melo vyresit monochromaticke obrazky )
-;	Shodna se sousednim Paper? ( i kdyz neni cerna )
-;		ANO: Bude to novy Paper. Exit.
-;		 NE: Bude to novy Ink!  ( cerna u monochromatickeho jeste dojde )  Draw.
-; 2. Vsechny nebo jen Paper? ( DB_COLORS_FIXED ) 
-;	Shodna s Paper?
-;		ANO: Je to Paper. Exit.
-;		 NE: Bude to novy Ink. ( nebo prepsany ) Draw.
-; 3. Jen Ink? ( DB_INK_FIXED )
-;	Shodny s Ink?
-;		ANO: Je to Ink. Draw.
-;		 NE: Bude to novy Paper. Exit.
-
-; Prvni nebo posledni v matici 8x8?
-	LD	A,D			;  4:1 Y
-	AND	$07			;  7:2
-	LD	B,A			;  4:1
+	
+	LD	B,$07			;  7:2
 	LD	A,E			;  4:1 X
-	AND	$07			;  7:2
-	ADD	A,B			;  4:1 prvni = 0?
-	JR	z,DB_FIRST_SEARCH	;12/7:2
-	CP	$0E			;  7:2 posledni = 14?
-	LD	A,(HL)			;  7:1
-	JR	nz,DB_NO_LAST		;12/7:2
-; Vymazeme Flash a Bright
-	AND	$3F			;  7:2 Paper + Ink
-DB_NO_LAST:
-
-	BIT	7,(HL)			; 12:2 Flash (Paper undefined)
-	LD	(HL),A			;  7:1
-	JR	z,DB_COLORS_FIXED	;12/7:2
-
-; 3. Paper undefined + Ink found -----------------------
-DB_INK_FIXED:
-	AND	$07			;  7:2
-	RLCA				;  4:1
-	RLCA				;  4:1
-	RLCA				;  4:1
-	CP	C			;  4:1 Test Ink
-	JR	z,DB_SCREEN_ADR		;12/7:2
-	JR	DB_NEW_PAPER		; 12:2
-
-; 1. Paper undefined + Ink undefined -------------------
-DB_FIRST_SEARCH:
-	LD	(HL),$C0		; 10:2 set Flash + Bright + Black + Black
-	OR	C			;  4:1 A + C = 0 + C = Black?
-	JR	z,DB_NEW_PAPER		;12/7:2
+	OR	D			;  4:1 Y
+	AND	B			;  4:1 
+	JR	nz,DB_TEST_PAPER	;12/7:2 Prvni pixel matice?
 	
-; Pokus o kontinuitu v barvach mezi 8x8 maticemi. Porovname s levou matici, a pokud to nejde tak s horni.
-	PUSH	HL			; 11:1
-	LD	A,L			;  4:1
-	AND	$1F			;  7:2
-	JR	nz,DB_DALSI_SLOUPEC	;12/7:2
-	LD	A,C			;  4:1
-	LD	BC,$FFE1		; 10:3 -31 = -$1F
-	ADD	HL,BC			; 11:1	
-	LD	C,A			;  4:1
-DB_DALSI_SLOUPEC:
-	DEC	HL			;  4:1
-; test Paper
-	LD	A,(HL)			;  7:1 Sousedni atribut
-	AND	$38			;  7:2 Sousedni Paper
-	CP	C			;  4:1
-	POP	HL			; 10:1
-	JR	nz,DB_NEW_INK		;12/7:2
-	
-DB_NEW_PAPER:
-	LD	A,(HL)			;  7:1
-	OR	C			;  4:1
-	AND	%01111111		;  7:2 Flash clear
-	LD	(HL),A			;  4:1
-;	Propadne na DRAW_BIT_EXIT 
+; Prvnim pixel bude vzdy PAPER, ten ma hodnotu pixelu 0.
+; Vytvorime si k nemu falesny INK = ( PAPER + 4 ) & $07
+; Tzn. pro zelenou barvu (4) PAPERu a vyssi, bude mit INK nizsi hodnotu.
+; Pokud bude ve znaku jen jedna barva, a bude to ta zelena (4) nebo vyssi, tak se diky falesnemu INK aktivuje inverze bitu matice 8x8
+; U obrazku jen ze 2 barev, jejichz rozdil je aspon 4, nevzniknou v obraze inverzni matice. 
 
-; 2. Paper found + Ink found / undefined ---------------
-DB_COLORS_FIXED:
+	LD	A,C			;  7:1
+	RRCA				;  4:1
+	RRCA				;  4:1
+	RRCA				;  4:1
+	ADD	A,$04			;  7:2 +4 k barve
+	AND	B			;  4:1 4..7 pretece na 0..3
+	OR	C			;  4:1 + PAPER, clear carry
+	LD	(HL),A			;  7:1 Smazeme Flash, PAPER, falesny INK
+	JR	DB_CLEAR_PIXEL		; 12:2
+
+DB_TEST_PAPER:
+	LD	A,(HL)			;  7:1
 	AND	$38			;  7:2
-	CP	C			;  4:1 Test Paper
-	JR	z,DB_EXIT		;12/7:2
-
-DB_NEW_INK:
+	CP	C			;  4:1
+	JR	z,DB_CLEAR_PIXEL	; 12/7:2 je to PAPER
+	
 	LD	A,C			;  4:1
 	RRCA				;  4:1
 	RRCA				;  4:1
-	RRCA				;  4:1 .0...PPP
+	RRCA				;  4:1
 	XOR	(HL)			;  7:1
-	AND	%01000111		;  7:2
-	XOR	(HL)			;  7:1 ?0???GRB, clear Bright
-	LD	(HL),A			;  7:1
+	AND	B			;  4:1
+	XOR	(HL)			;  7:1
+	LD	(HL),A			;  7:1 INK neustale prepisujeme na posledni variantu
 
-; ------------------------------------------------------
-DB_SCREEN_ADR:
- 
+; ----------------------
+DB_SET_PIXEL:
+	SCF				;  4:1
+
+DB_CLEAR_PIXEL:
+	LD	A,$00			;  7:2 Seznam uz nactenych pixelu
+	ADC	A,A			;  4:1
+	LD	(DB_CLEAR_PIXEL+1),A	; 13:3
+	LD	C,A			;  4:1 8 pixels
+
+; Test praveho konce znaku
+	LD	A,E			;  4:1 reg. E je odted volny
+	INC	A			;  4:1
+	AND	B			;  4:1
+	JR	nz,DB_EXIT		;12/4:2
+	
+; Test spodniho konce znaku
+	LD	A,D			;  4:1 reg. D je odted volny
+	INC	A			;  4:1
+	AND	B			;  4:1
+	EX	AF,AF'			;  4:1 odlozime vykonani
+
 ; D = BBRRRSSS E = CCCCC...
 ; H = 010110BB L = RRRCCCCC
 	LD	A,H			;  4:1
@@ -629,19 +592,46 @@ DB_SCREEN_ADR:
 	XOR	D			;  4:1 110BBSSS
 	ADD	A,A			;  4:1 10BBSSS0
 	RRCA				;  4:1 010BBSSS
-	LD	H,A			;  4:1
-; H = 010BBSSS L = RRRCCCCC
+	LD	D,A			;  4:1
+	LD	E,L			;  4:1
+; D = 010BBSSS E = RRRCCCCC
 
-	LD	A,E			;  4:1
-	AND	$07			;  7:2
-	LD	B,A			;  4:1
+	LD	A,C			;  4:1
+	LD	(DE),A			;  7:1 Ulozeni 8 pixelu na obrazku
+
+; Test spodniho konce znaku, dokonceni
+	EX	AF,AF'			;  4:1 obnovime priznaky
+	JR	nz,DB_EXIT		;12/4:2
+
+; Jsme na poslednim pixelu matice 8x8, zkontrolujeme zda nemame udelat inverzi matice
+
+	LD	A,(HL)			;  7:1 FBpppiii
+	AND	B			;  4:1 .....iii
+	RRCA				;  4:1 i.....ii
+	RRCA				;  4:1 ii.....i
+	XOR	(HL)			;  7:1 ??pppii?
+	AND	$C7			;  7:2 ??000ii? 
+	XOR	(HL)			;  7:1 iippp..i
+	RRCA				;  4:1
+	RRCA				;  4:1
+	RRCA				;  4:1 ..iiippp
+	LD	C,A			;  4:1 Prohozeny INK a PAPER
+
+	XOR	(HL)			;  7:1
+	AND	B			;  4:1 %00000???
+	XOR	(HL)			;  7:1 PAPER PAPER  
+	CP	C			;  4:1 "PAPER PAPER" - "INK PAPER" -> PAPER - INK
+	JR	c,DB_EXIT		;12/7:2
+	
+; Inverze matice
+	LD	(HL),C			;  7:1 Prohozeny INK a PAPER
 	INC	B			;  4:1
-	LD	A,$01			;  7:2  
-DB_LOOP:
-	RRCA				;  4:1 rotace doprava
-	DJNZ	DB_LOOP			;13/8:2
-	OR	(HL)			;  7:1
-	LD	(HL),A			;  7:1
+DB_INVERT_MATRIX:
+	LD	A,(DE)			;  7:1
+	CPL				;  4:1
+	LD	(DE),A			;  7:1
+	DEC	D			;  4:1
+	DJNZ	DB_INVERT_MATRIX	;13/8:2
 	
 DB_EXIT:
 	EXX				;  4:1
