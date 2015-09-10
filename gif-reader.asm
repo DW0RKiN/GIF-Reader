@@ -406,28 +406,31 @@ D_ENTRY:
 	LD	(D_LOAD_K+1),HL		; 16:3 zasobnik nelze pouzit a volna instrukce DE je pouzita na citac
 	
 D_DRAW_PIXELS:
-	POP	HL
+	EXX				;  4:1
+	POP	HL			; 10:1
 	CALL	DRAW_BIT		; 17:3
+	EXX				;  4:1
 	DEC	DE			;  6:1
 	LD	A,D			;  4:1
 	OR	E			;  4:1
 	JR	nz,D_DRAW_PIXELS	;12/7:2
 
 D_LOAD_K:
-	LD	BC,$0000		; 10:3 = K
-	LD	H,B			;  4:1
-	LD	L,C			;  4:1
+	LD	HL,$0000		; 10:3 = K
 	POP	AF			; 10:1 !!!!!!!!!!!! zero flag = new_index
+	PUSH	HL			; 11:1
 	CALL	z,DRAW_BIT		;17/10:3
+	POP	HL			; 10:1
+
 
 ; Vytvoreni nove polozky ve slovniku
-; BC = K
-; [BC] = GRB..... ........
+; HL = K
+; [HL] = GRB..... ........
+	INC	HL			;  6:1
+	LD	A,(HL)			;  7:1 GRB.....
 PREVIOUS_INDEX:
 	LD	HL,$0000		; 10:3 0000iiii iiiiiiii, na tohle se budeme odkazovat
 	ADD	HL,HL			; 11:1 000iiiii iiiiiii0
-	INC	BC			;  6:1
-	LD	A,(BC)			;  7:1 GRB.....
 	AND	$E0			;  7:2 GRB00000
 	OR	H			;  4:1 GRBiiiii
 	LD	B,A			;  4:1
@@ -491,7 +494,6 @@ DRAW_BIT:
 	RRCA				;  4:1
 	RRCA				;  4:1
 	AND	$38			;  7:2 00GRB000
-	EXX				;  4:1
 	LD	C,A			;  4:1 Nactena hodnota je presunuta na pozici Paper
 
 ADR_FRAMEBUFF:
@@ -573,7 +575,7 @@ DB_CLEAR_PIXEL:
 	LD	A,E			;  4:1 reg. E je odted volny
 	INC	A			;  4:1
 	AND	B			;  4:1
-	JR	nz,DB_EXIT		;12/4:2
+	RET	nz			;11/5:1
 	
 ; Test spodniho konce znaku
 	LD	A,D			;  4:1 reg. D je odted volny
@@ -601,7 +603,7 @@ DB_CLEAR_PIXEL:
 
 ; Test spodniho konce znaku, dokonceni
 	EX	AF,AF'			;  4:1 obnovime priznaky
-	JR	nz,DB_EXIT		;12/4:2
+	RET	nz			;11/5:1
 
 ; Jsme na poslednim pixelu matice 8x8, zkontrolujeme zda nemame udelat inverzi matice
 
@@ -621,7 +623,7 @@ DB_CLEAR_PIXEL:
 	AND	B			;  4:1 %00000???
 	XOR	(HL)			;  7:1 PAPER PAPER  
 	CP	C			;  4:1 "PAPER PAPER" - "INK PAPER" -> PAPER - INK
-	JR	c,DB_EXIT		;12/7:2
+	RET	c			;11/5:1
 	
 ; Inverze matice
 	LD	(HL),C			;  7:1 Prohozeny INK a PAPER
@@ -633,6 +635,4 @@ DB_INVERT_MATRIX:
 	DEC	D			;  4:1
 	DJNZ	DB_INVERT_MATRIX	;13/8:2
 	
-DB_EXIT:
-	EXX				;  4:1
 	RET				; 10:1
