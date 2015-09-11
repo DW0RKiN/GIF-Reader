@@ -192,6 +192,7 @@ I_LOOP:
 ; Nastaveni slovniku
 ; B = realny CLEARCODE
 ; GRBiiiii iiiiiiiS = GRB jsou barevne slozky a S je stop bit, indexu nizsi jak CLEARCODE ho maji nastaven
+; Nizsi bajt slova nikdy nebude obsahovat hodnotu $FF. Muze byt pouzita jako signal.
 ADR_PALETY:
 	LD	HL,$0000		; 10:3 ADR_PALETY
 	LD	DE,ADR_SLOVNIKU		; 10:3
@@ -321,16 +322,17 @@ D_CLEAR_CODE:
 	LD	(LZW_OVERFLOWS+1),HL	; 16:3 2x realne CLEARCODE
 	LD	IXL,IXH			;  8:2 AKT_SIRKA_LZW = MIN_SIRKA_LZW
 
-; nacteme prvni index, ktery musi byt mensi jak CLEARCODE
+; nacteme prvni kod s prazdnym slovnikem, takze to bude primo index do palety
+; ERROR! pokud nekdo posle hned za CLEARCODE STOPCODE a ne rovnou STOPCODE
 	CALL	READxBITS		; 17:3 vystup: DE
 	EX	DE,HL			;  4:1
 	LD	(PREVIOUS_INDEX+1),HL	; 16:3
 
-	ADD	HL,HL			; 11:1
-	LD	A,H			;  4:1
-	OR	ADR_SEG_SLOVNIKU	;  7:2
-	LD	H,A			;  4:1
-	CALL	DRAW_BIT		; 17:3
+	LD	H,ADR_SEG_SLOVNIKU/2	;  7:2 HL 0..255 -> 0AAA0000 iiiiiiii
+	ADD	HL,HL			; 11:1  AAA0000i iiiiiii0
+	INC	L			;  4:1
+	LD	C,(HL)			;  7:1
+	CALL	DRAW_BIT		; 17:3 Vstup: C
 
 D_READ_CODE:
 	CALL	READxBITS		; 17:3 vystup: DE
@@ -361,12 +363,6 @@ STOPCODE:
 	LD	HL,(PREVIOUS_INDEX+1)	; 16:3 DE = 0
 D_INDEX_FOUND:
 
-;   HL = 0000iiii iiiiiiii
-
-	ADD	HL,HL			; 11:1 clear carry
-	LD	DE,ADR_SLOVNIKU		; 10:3
-	ADD	HL,DE			; 11:1
-	LD	D,E			;  4:1 DE = 0
 
 ; Slovnik je ulozen jako 4096 = 2^12 16 bitovych polozek = 8 KB
 ; format polozek je: GRBiiiii iiiiiiis
@@ -375,62 +371,60 @@ D_INDEX_FOUND:
 ; ".......s" je stop bit znacici ze jsme uplne na prvnim polozce slova
 ;
 ; Takze postupnym zpetnym prolezanim vytvorime cele slovo a dostaneme se az na prvni polozku K.
+; Tahle smycka patri k nejvytizenejsim v programu, proto je to napsane primarne na rychlost
 
-; [HL] = GRBiiiii iiiiiiis 
-;   HL = AAAiiiii iiiiiii0
+;   HL = 0000iiii iiiiiiii
 
-	JR	D_ENTRY			; 12:2
+	LD	D,ADR_SEG_SLOVNIKU	;  7:2
+	ADD	HL,HL			; 11:1
+	LD	A,H			;  4:1
+	OR	D			;  4:1
+	LD	H,A			;  4:1 HL = AAAiiiii iiiiiii0
+	LD	B,$FF			;  7:2 signal stop read
+	PUSH	BC			; 11:1
+	LD	B,$1F			;  7:2 maska a zruseni signalu stop
+
+; [HL] = GRBiiiii iiiiiiis
 D_LOOP:
-
 ; L =  [HL]
+	LD	A,(HL)			;  7:1 iiiiiiiS
+	INC	L			;  4:1 bylo sude
+	LD	C,(HL)			;  7:1 GRBiiiii
+	LD	L,A			;  4:1 iiiiiiiS
 ; H = ([HL+1] & $1F) + ADR_SEG_SLOVNIKU
+	LD	A,B			;  4:1 00011111
+	AND	C			;  4:1 000iiiii
+	OR	D			;  4:1 AAAiiiii
+	LD	H,A			;  4:1 AAAiiiii
 
-	RLCA				;  4:1
-	INC	HL			;  6:1
-	LD	H,(HL)			;  7:1 GRBiiiii
-	LD	L,A			;  4:1
-	LD	A,$1F			;  7:2 00011111
-	AND	H			;  4:1 000iiiii
-	OR	ADR_SEG_SLOVNIKU	;  7:2 AAAiiiii
-	LD	H,A			;  4:1
-D_ENTRY:
-	INC	DE			;  6:1
-	PUSH	HL			; 11:1
-	LD	A,(HL)			;  7:1
-	RRCA				;  4:1 stop bit?
-	JR	nc,D_LOOP		;12/7:2
+	PUSH	BC			; 11:1
 	
+	BIT	0,L			;  8:2 stop bit?
+	JR	z,D_LOOP		;12/7:2
+
 ; Dosli jsme na prvni index slova
-; BC obsahuje pocet polozek na zasobniku
-; Zasobnik je plny sudych adres na predchozi index ve slove
-	LD	(D_LOAD_K+1),HL		; 16:3 zasobnik nelze pouzit a volna instrukce DE je pouzita na citac
-	
+; Zasobnik je plny GRB hodnot
+
+	EXX				;  4:1 C = K !
+	POP	BC			; 10:1
 D_DRAW_PIXELS:
-	EXX				;  4:1
-	POP	HL			; 10:1
-	CALL	DRAW_BIT		; 17:3
-	EXX				;  4:1
-	DEC	DE			;  6:1
-	LD	A,D			;  4:1
-	OR	E			;  4:1
+	CALL	DRAW_BIT		; 17:3 Vstup: C
+	POP	BC			; 10:1
+	INC	B			;  4:1
 	JR	nz,D_DRAW_PIXELS	;12/7:2
+	EXX				;  4:1 C = K !
 
-D_LOAD_K:
-	LD	HL,$0000		; 10:3 = K
 	POP	AF			; 10:1 !!!!!!!!!!!! zero flag = new_index
-	PUSH	HL			; 11:1
-	CALL	z,DRAW_BIT		;17/10:3
-	POP	HL			; 10:1
-
+	PUSH	BC			; 11:1 C = K !
+	CALL	z,DRAW_BIT		;17/10:3 Tisknout jeste K?
+	POP	BC			; 10:1 C = K !
 
 ; Vytvoreni nove polozky ve slovniku
-; HL = K
-; [HL] = GRB..... ........
-	INC	HL			;  6:1
-	LD	A,(HL)			;  7:1 GRB.....
+; C = K
 PREVIOUS_INDEX:
 	LD	HL,$0000		; 10:3 0000iiii iiiiiiii, na tohle se budeme odkazovat
 	ADD	HL,HL			; 11:1 000iiiii iiiiiii0
+	LD	A,C			;  7:1 GRB.....
 	AND	$E0			;  7:2 GRB00000
 	OR	H			;  4:1 GRBiiiii
 	LD	B,A			;  4:1
@@ -484,13 +478,9 @@ D_POP_AND_READ_CODE:
 
 ; ----------------------------------------------
 ; Vstup: 
-;  HL  = (AAAiiiii iiiiiii0)
-; [HL] = (GRBiiiii iiiiiiis)
-; Vystup:
-; HL = HL+1, DE = DE, BC = BC, A = ?, flags = ?
+;  C  = GRB?????
 DRAW_BIT:
-	INC	HL			;  6:1
-	LD	A,(HL)			;  7:1 GRB?????
+	LD	A,C			;  4:1 GRB?????
 	RRCA				;  4:1
 	RRCA				;  4:1
 	AND	$38			;  7:2 00GRB000
@@ -551,14 +541,13 @@ DB_TEST_PAPER:
 	AND	$38			;  7:2
 	CP	C			;  4:1
 	JR	z,DB_CLEAR_PIXEL	; 12/7:2 je to PAPER
-	
+
+	LD	(HL),A			;  7:1 Jen PAPER
 	LD	A,C			;  4:1
 	RRCA				;  4:1
 	RRCA				;  4:1
 	RRCA				;  4:1
-	XOR	(HL)			;  7:1
-	AND	B			;  4:1
-	XOR	(HL)			;  7:1
+	OR	(HL)			;  7:1
 	LD	(HL),A			;  7:1 INK neustale prepisujeme na posledni variantu
 
 ; ----------------------
