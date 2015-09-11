@@ -1,5 +1,5 @@
 # GIF-Reader
-GIF Reader displays GIF images on the ZX Spectrum
+GIF viewer for ZX Spectrum
 
 Convert 256 x 192 GIF to SCR
 
