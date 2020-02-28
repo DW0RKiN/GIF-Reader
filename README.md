@@ -1,7 +1,7 @@
 # GIF-Reader
 GIF viewer for ZX Spectrum
 
-Convert 256 x 192 GIF to SCR
+Convert only 256 x 192 size GIF to SCR
 
 Support for calling directly from Basic:
 
