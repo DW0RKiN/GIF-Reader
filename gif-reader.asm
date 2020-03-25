@@ -13,9 +13,10 @@
 ; Compile:
 ; pasmo -d gif-reader.asm gif-reader.bin > test.asm
 
-ADR_SEG_SLOVNIKU	EQU	5 * %00100000		; $A000..$BFFF, granularita 8 KB
+ADR_SEG_SLOVNIKU	EQU	3 * %00100000		; $A000..$BFFF, granularita 8 KB
 ADR_SLOVNIKU		EQU	256 * ADR_SEG_SLOVNIKU
-progStart		EQU	ADR_SLOVNIKU + $2000	; $C000 = 49152
+progStart		EQU	ADR_SLOVNIKU+$8000
+; progStart		EQU	ADR_SLOVNIKU+$0A00
 
 ORG progStart
 
@@ -39,7 +40,8 @@ ERR_OWERFLOW_SCREEN	EQU	3	; Pixelu je vice jak 192*256
 MAIN:
 	EXX				;  4:1
 	PUSH	HL			; 11:1
-	
+	LD	(EXIT+1),SP		; 20:4
+
 ; PRINT USR progStart, ADR_GIF
 ; Nacteni druheho parametru do HL
 	RST	$20			; 11:1
@@ -48,13 +50,8 @@ MAIN:
 	LD	H,B			;  4:1
 	LD	L,C			;  4:1 HL = ADR_GIF
 	
-	LD	(ERROR_EXIT+1),SP	; 20:4
-	CALL	INIT			; 17:3
-	JP	DECODE			; 10:3 Na zasobniku mame data a chceme minimalizovat naklady k pristupu k nim.
-EXIT_DECODE:
-	XOR	A			;  4:1 = ERR_OK
-ERROR_EXIT:
-; stala se chyba, ukoncime program
+	JP	READ_GIF		; 10:3 Na zasobniku mame data a chceme minimalizovat naklady k pristupu k nim.
+EXIT:
 	LD	SP,$0000		; 10:3
 	POP	HL			; 10:1
 	EXX				;  4:1
@@ -63,38 +60,11 @@ ERROR_EXIT:
 	RET				; 10:1
 
 
+; **********************************************************************
+READ_GIF:
+; **********************************************************************
 
-; ----------------------------------------------
-; Vstup: 
-;	A  = "Packed byte"
-;	HL = Adresa posledniho bajtu hlavicky
-;	D  = 0
-; Vystup:
-;	HL = HL + 1, DE = 0
-;	HL = sizeof(PALETA), DE = HL + 1
-;	Plati HL + DE = DE + HL
-READ_PALETTE:
-	LD	E,D			;  4:1 DE = 0
-	INC	HL			;  6:1
-	BIT	7,A			;  8:2
-	RET	z			; 11/5:1 Neni tam paleta
 
-	LD	(ADR_PALETY+1),HL	; 16:3
-	AND	$07			;  7:2 nejnizsi tri bity udavaji velikost palety barev (2^(n+1)
-	LD	B,A			;  4:1
-	INC	B			;  4:1 1..8
-	LD	DE,$0001		; 10:3
-	EX	DE,HL			;  4:1	
-RP_LOOP:
-	ADD	HL,HL			; 11:1
-	DJNZ	RP_LOOP			;13/8:2
-	
-	LD	B,H			;  4:1
-	LD	C,L			;  4:1 BC = HL
-	ADD	HL,HL			; 11:1
-	ADD	HL,BC			; 11:1 3x kvuli RGB na polozku
-
-	RET				; 10:1
 
 
 ; **********************************************************************
@@ -105,7 +75,7 @@ INIT:
 	LD	A,(HL)			;  7:1
 	CP	$47			;  7:2 ASCI 'G'
 	LD	A,ERR_GIF_NOT_FOUND	;  7:2
-	JR	nz,ERROR_EXIT		;12/7:2
+	JR	nz,EXIT			;12/7:2
 	LD	DE,$000A		; 10:3 = 10 = offset "Packed bajtu" v hlavicce gifu
 	ADD	HL,DE			; 11:1
 	LD	A,(HL)			;  7:1 "Packed byte"
@@ -135,7 +105,7 @@ I_NEXT_FRAME:
 	CP	$fe			; Reading Gif Comment Extension
 	
 	LD	A,ERR_UNKNOWN_FRAME	;  7:2
-	JR	nz,ERROR_EXIT		;12/7:2
+	JR	nz,EXIT			;12/7:2
 	LD	E,(HL)			;  7:1 DE = Size of Comment
 	INC	HL			;  6:1 preskocime Size of Comment
 	INC	HL			;  6:1 preskocime Terminator
@@ -164,7 +134,7 @@ I_FRAME_0x2C:
 	DEC	D			;  4:1
 	DEC	D			;  4:1 snizime pocet o 2 bajty, ktere rovnou nacteme do pomocne 16 bitove promenne
 	LD	E,$09			;  7:2 pocet zbyvajicich bitu se odcita pred ctenim
-	POP	AF			; 10:1 Nacti RET aby nezavazelo na zasobniku
+; 	POP	AF			; 10:1 Nacti RET aby nezavazelo na zasobniku
 	PUSH	DE			; 11:1 D = "zbyva bajtu", E = "zbyva bitu"
 	LD	E,(HL)			;  7:1 nizsi bajt do pomocne 16 bitove promenne
 	INC	HL			;  6:1
@@ -174,7 +144,7 @@ I_FRAME_0x2C:
 	LD	H,(HL)			;  7:1 hodnota aktualniho (tretiho) bajtu z bitoveho proudu
 	PUSH	HL			; 11:1
 	PUSH	DE			; 11:1 ulozeni 16 bitove promenne na zasobnik
-	PUSH	AF			; 11:1 RET
+; 	PUSH	AF			; 11:1 RET
 
 	LD	HL,$ffff		; 10:3
 	LD	(ADR_FRAMEBUFF+1),HL	; 16:3 "curzor" do obrazu nastavime na 0,0
@@ -223,71 +193,7 @@ I_SLOVNIK:
 	LD	(DE),A			;  7:1 GRB.....
 	INC	DE			;  6:1
 	DJNZ	I_SLOVNIK		;13/8:2
-	RET				; 10:1
-
-
-
-; ----------------------------------------------
-; Fce nacte IXL bitu z bitoveho proudu
-; Vstup: IXL = kolik nacist bitu
-; Vystup: DE
-READxBITS:
-; Nacteni promennych ze zasobniku
-
-	POP	DE			; 10:1 Nacti RET READxBITS
-	POP	BC			; 10:1 Nacteme uz rotovane 16 bitove cislo
-	LD	HL,(LZW_OVERFLOWS+1)	; 16:3
-	DEC	HL			;  6:1
-	LD	A,L			;  4:1 Maska nizsiho bajtu
-	AND	C			;  4:1 Hodnota nizsiho bajtu
-	LD	L,A			;  4:1
-	LD	A,H			;  4:1 Maska vyssiho bajtu
-	AND	B			;  4:1 Hodnota vyssiho bajtu
-	LD	H,A			;  4:1 HL = vysledek, DE = RET READxBITS
-	EX	DE,HL			;  4:1 prohodime
-
-; ted bychom uz mohli zavolat JP (HL), ale musime pripravit na pristi cteni to 16 bitove cislo ulozene v BC
-
-	EXX				;  4:1
-	POP	AF			; 10:1 A = aktualni bajt z bitoveho proudu
-	POP	HL			; 10:1 adresa na bajt cteny z bitoveho proudu
-	POP	DE			; 10:1 D = "zbyva bajtu", E = "zbyva bitu"
-	LD	B,IXL			;  8:2 AKT_SIRKA_LZW = pocet ctenych bitu
-RxB_LOOP:
-	DEC	E			;  4:1 "zbyva bitu", pred prvnim ctenim musi obsahovat 9, a ne 8
-	JR	nz,RxB_ROTATE		;12/7:2
-
-	INC	HL			;  6:1 zvysime adresu o jedna
-	LD	A,(HL)			;  7:1 cteny bajt z bitoveho proudu
-	LD	E,$08			;  7:2 "zbyva bitu", tady staci uz 8, protoze jeden bit ted precteme
-
-	DEC	D			;  4:1 zbyva bajtu
-	JR	nz,RxB_ROTATE		;12/7:2
-
-	LD	D,A			;  7:1 byla to hlavicka s poctem bajtu dalsiho bloku
-	INC	HL			;  6:1 zvysime adresu o jedna
-	LD	A,(HL)			;  7:1 cteny bajt z bitoveho proudu
-
-RxB_ROTATE:
-	RRCA				;  4:1
-	
-	EXX				;  4:1
-        RR	B			;  8:2
-        RR	C			;  8:2
-	EXX				;  4:1
-        DJNZ	RxB_LOOP		;13/8:2
-        
-; Ulozeni promennych na zasobnik
-	PUSH	DE			; 11:1 D = "zbyva bajtu", E = "zbyva bitu"
-	PUSH	HL			; 11:1 adresa na bajt cteny z bitoveho proudu
-	PUSH	AF			; 11:1 A = aktualni bajt z bitoveho proudu
-	EXX				;  4:1
-	PUSH	BC			; 11:1 Ulozime uz rotovane 16 bitove cislo
-	JP	(HL)			;  4:1
-;  ----------------------------------------------
-
-
-
+	; fall to DECODE
 
 
 ; **********************************************************************
@@ -339,10 +245,10 @@ D_READ_CODE:
 
 STOPCODE:
 	LD	HL,$0000		; 10:3 = STOPCODE
-	AND	A			;  4:1 clear carry
+	XOR	A			;  4:1 clear carry
 	SBC	HL,DE			; 15:2 clear carry from READxBITS
 ; Exit DECODE
-	JP	z,EXIT_DECODE		; 10:3
+	JP	z,EXIT  		; 10:3
 	
 ; test CLEARCODE
 	LD	A,L			;  4:1 HL = $0001?
@@ -494,7 +400,7 @@ ADR_FRAMEBUFF:
 	LD	A,$C0			;  7:2 $C000 = 49152 = 256x192
 	CP	D			;  4:1
 	LD	A,ERR_OWERFLOW_SCREEN	;  7:2
-	JP	z,ERROR_EXIT		; 10:3
+	JP	z,EXIT			; 10:3
 
 ; D = BBRRRSSS E = CCCCC... 
 	LD	A,D			;  4:1 BBRRR...
@@ -625,3 +531,97 @@ DB_INVERT_MATRIX:
 	DJNZ	DB_INVERT_MATRIX	;13/8:2
 	
 	RET				; 10:1
+
+    
+; ----------------------------------------------
+; Vstup: 
+;	A  = "Packed byte"
+;	HL = Adresa posledniho bajtu hlavicky
+;	D  = 0
+; Vystup:
+;	HL = HL + 1, DE = 0
+;	HL = sizeof(PALETA), DE = HL + 1
+;	Plati HL + DE = DE + HL
+READ_PALETTE:
+	LD	E,D			;  4:1 DE = 0
+	INC	HL			;  6:1
+	BIT	7,A			;  8:2
+	RET	z			; 11/5:1 Neni tam paleta
+
+	LD	(ADR_PALETY+1),HL	; 16:3
+	AND	$07			;  7:2 nejnizsi tri bity udavaji velikost palety barev (2^(n+1)
+	LD	B,A			;  4:1
+	INC	B			;  4:1 1..8
+	LD	DE,$0001		; 10:3
+	EX	DE,HL			;  4:1	
+RP_LOOP:
+	ADD	HL,HL			; 11:1
+	DJNZ	RP_LOOP			;13/8:2
+	
+	LD	B,H			;  4:1
+	LD	C,L			;  4:1 BC = HL
+	ADD	HL,HL			; 11:1
+	ADD	HL,BC			; 11:1 3x kvuli RGB na polozku
+
+	RET				; 10:1
+
+    
+
+; ----------------------------------------------
+; Fce nacte IXL bitu z bitoveho proudu
+; Vstup: IXL = kolik nacist bitu
+; Vystup: DE
+READxBITS:
+; Nacteni promennych ze zasobniku
+
+	POP	DE			; 10:1 Nacti RET READxBITS
+	POP	BC			; 10:1 Nacteme uz rotovane 16 bitove cislo
+	LD	HL,(LZW_OVERFLOWS+1)	; 16:3
+	DEC	HL			;  6:1
+	LD	A,L			;  4:1 Maska nizsiho bajtu
+	AND	C			;  4:1 Hodnota nizsiho bajtu
+	LD	L,A			;  4:1
+	LD	A,H			;  4:1 Maska vyssiho bajtu
+	AND	B			;  4:1 Hodnota vyssiho bajtu
+	LD	H,A			;  4:1 HL = vysledek, DE = RET READxBITS
+	EX	DE,HL			;  4:1 prohodime
+
+; ted bychom uz mohli zavolat JP (HL), ale musime pripravit na pristi cteni to 16 bitove cislo ulozene v BC
+
+	EXX				;  4:1
+	POP	AF			; 10:1 A = aktualni bajt z bitoveho proudu
+	POP	HL			; 10:1 adresa na bajt cteny z bitoveho proudu
+	POP	DE			; 10:1 D = "zbyva bajtu", E = "zbyva bitu"
+	LD	B,IXL			;  8:2 AKT_SIRKA_LZW = pocet ctenych bitu
+RxB_LOOP:
+	DEC	E			;  4:1 "zbyva bitu", pred prvnim ctenim musi obsahovat 9, a ne 8
+	JR	nz,RxB_ROTATE		;12/7:2
+
+	INC	HL			;  6:1 zvysime adresu o jedna
+	LD	A,(HL)			;  7:1 cteny bajt z bitoveho proudu
+	LD	E,$08			;  7:2 "zbyva bitu", tady staci uz 8, protoze jeden bit ted precteme
+
+	DEC	D			;  4:1 zbyva bajtu
+	JR	nz,RxB_ROTATE		;12/7:2
+
+	LD	D,A			;  7:1 byla to hlavicka s poctem bajtu dalsiho bloku
+	INC	HL			;  6:1 zvysime adresu o jedna
+	LD	A,(HL)			;  7:1 cteny bajt z bitoveho proudu
+
+RxB_ROTATE:
+	RRCA				;  4:1
+	
+	EXX				;  4:1
+        RR	B			;  8:2
+        RR	C			;  8:2
+	EXX				;  4:1
+        DJNZ	RxB_LOOP		;13/8:2
+        
+; Ulozeni promennych na zasobnik
+	PUSH	DE			; 11:1 D = "zbyva bajtu", E = "zbyva bitu"
+	PUSH	HL			; 11:1 adresa na bajt cteny z bitoveho proudu
+	PUSH	AF			; 11:1 A = aktualni bajt z bitoveho proudu
+	EXX				;  4:1
+	PUSH	BC			; 11:1 Ulozime uz rotovane 16 bitove cislo
+	JP	(HL)			;  4:1
+;  ----------------------------------------------
