@@ -15,8 +15,8 @@
 
 ADR_SEG_SLOVNIKU	EQU	3 * %00100000		; $A000..$BFFF, granularita 8 KB
 ADR_SLOVNIKU		EQU	256 * ADR_SEG_SLOVNIKU
-progStart		EQU	ADR_SLOVNIKU+$8000
-; progStart		EQU	ADR_SLOVNIKU+$0A00
+; progStart		EQU	ADR_SLOVNIKU+$2000
+progStart		EQU	ADR_SLOVNIKU+$0A00
 
 ORG progStart
 
@@ -40,7 +40,7 @@ ERR_OWERFLOW_SCREEN	EQU	3	; Pixelu je vice jak 192*256
 MAIN:
 	EXX				;  4:1
 	PUSH	HL			; 11:1
-	LD	(EXIT+1),SP		; 20:4
+	LD	(GIF_EXIT+1),SP		; 20:4
 
 ; PRINT USR progStart, ADR_GIF
 ; Nacteni druheho parametru do HL
@@ -51,7 +51,7 @@ MAIN:
 	LD	L,C			;  4:1 HL = ADR_GIF
 	
 	JP	READ_GIF		; 10:3 Na zasobniku mame data a chceme minimalizovat naklady k pristupu k nim.
-EXIT:
+GIF_EXIT:
 	LD	SP,$0000		; 10:3
 	POP	HL			; 10:1
 	EXX				;  4:1
@@ -75,7 +75,7 @@ INIT:
 	LD	A,(HL)			;  7:1
 	CP	$47			;  7:2 ASCI 'G'
 	LD	A,ERR_GIF_NOT_FOUND	;  7:2
-	JR	nz,EXIT			;12/7:2
+	JR	nz,GIF_EXIT			;12/7:2
 	LD	DE,$000A		; 10:3 = 10 = offset "Packed bajtu" v hlavicce gifu
 	ADD	HL,DE			; 11:1
 	LD	A,(HL)			;  7:1 "Packed byte"
@@ -105,7 +105,7 @@ I_NEXT_FRAME:
 	CP	$fe			; Reading Gif Comment Extension
 	
 	LD	A,ERR_UNKNOWN_FRAME	;  7:2
-	JR	nz,EXIT			;12/7:2
+	JR	nz,GIF_EXIT		;12/7:2
 	LD	E,(HL)			;  7:1 DE = Size of Comment
 	INC	HL			;  6:1 preskocime Size of Comment
 	INC	HL			;  6:1 preskocime Terminator
@@ -248,7 +248,7 @@ STOPCODE:
 	XOR	A			;  4:1 clear carry
 	SBC	HL,DE			; 15:2 clear carry from READxBITS
 ; Exit DECODE
-	JP	z,EXIT  		; 10:3
+	JP	z,GIF_EXIT  		; 10:3
 	
 ; test CLEARCODE
 	LD	A,L			;  4:1 HL = $0001?
@@ -400,7 +400,7 @@ ADR_FRAMEBUFF:
 	LD	A,$C0			;  7:2 $C000 = 49152 = 256x192
 	CP	D			;  4:1
 	LD	A,ERR_OWERFLOW_SCREEN	;  7:2
-	JP	z,EXIT			; 10:3
+	JP	z,GIF_EXIT			; 10:3
 
 ; D = BBRRRSSS E = CCCCC... 
 	LD	A,D			;  4:1 BBRRR...
